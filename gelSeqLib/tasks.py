@@ -65,8 +65,8 @@ class Task:
 
     def get_index_location(self, name):
         location = os.path.join(base_dir, 'resources', self.species, name)
-
         return location
+
 
     def get_resources_root(self, species):
         resources_dir = os.path.join(base_dir, 'resources')
@@ -160,36 +160,46 @@ class Plate_Task(Task):
 
 
         self.split_to_cells()
-        mapper = [_CELLrun(fasta.replace('.fasta', ''), self.output_dir + "/" + fasta, self.output_dir)
+        #cells_dir = os.path.join(self.output_dir,"cells")
+        #umis_dir = os.path.join(self.output_dir, "cells_umis")
+        mapper = []
+        #for dir in [cells_dir,umis_dir]:
+        mapper += [_CELLrun(fasta.replace('.fasta', ''), self.output_dir + "/" + fasta, self.output_dir)
                   for fasta in os.listdir(self.output_dir) if ".fasta" in fasta]
         for job in mapper:
             job.submit_command(cpu_cores=5, memory=600, queue="new-short")
-            # count_jobs(mapper[0:mapper.index(job) + 1])
         wait_for_jobs(mapper)
 
+        #for dir in [cells_dir,umis_dir]:
         df1 = pd.read_csv(self.output_dir + "/final_output.csv")
         list_csv = [self.output_dir + "/" + file for file in os.listdir(self.output_dir) if ".csv" in file and "output" not in file and "high" not in file]
-        df2 = pd.DataFrame(columns=["cell_name","V first","V first counts","V first avg e_value",
-                                                                          "V second","V second counts","V second avg e_value",
-                                                                          "D first","D first counts","D first avg e_value",
-                                                                          "D second","D second counts","D second avg e_value",
-                                                                          "J first", "J first counts","J first avg e_value",
-                                                                          "J second", "J second counts","J second avg e_value",
-                                                                          "CDR3 first", "CDR3 first counts","CDR3 first identity","CDR3 first unique reads",
-                                                                          "CDR3 second", "CDR3 second counts","CDR3 second identity","CDR3 second unique reads"])
+        df2 = pd.DataFrame(columns=["cell_name","V_first","V_first_counts","V_first_avg_e_value",
+                                                                          "V_second","V_second_counts","V_second_avg_e_value",
+                                                                          "D_first","D_first_counts","D_first_avg_e_value",
+                                                                          "D_second","D_second_counts","D_second_avg_e_value",
+                                                                          "J_first", "J_first_counts","J_first_avg_e_value",
+                                                                          "J_second", "J_second_counts","J_second_avg_e_value",
+                                                                          "CDR3_first", "CDR3_first_counts","CDR3_first_identity","CDR3_first_unique_reads",
+                                                                          "CDR3_translation_first","CDR3_translation_first_counts","CDR3_translation_first_identity","CDR_translation_first_unique_reads",
+                                                                          "CDR3_second", "CDR3_second_counts","CDR3_second_identity","CDR3_second_unique_reads",
+                                                                          "CDR3_translation_second","CDR3_translation_second_counts","CDR3_translation_second_identity",
+                                                                          "CDR3_translation_second_unique_reads"])
         for file in list_csv:
             df2 = df2.append(pd.read_csv(file), ignore_index=True)
         #for file in list_csv:
             #os.remove(file)
         df1 = pd.merge(df1,df2,on="cell_name",how="inner",left_index=False,right_index=False)
-        df1 = df1[['Well_ID','cell_name','reads_freq','plate_total_reads','umi_distribution',"V first","V first counts","V first avg e_value",
-                                                                          "V second","V second counts","V second avg e_value",
-                                                                          "D first","D first counts","D first avg e_value",
-                                                                          "D second","D second counts","D second avg e_value",
-                                                                          "J first", "J first counts","J first avg e_value",
-                                                                          "J second", "J second counts","J second avg e_value",
-                                                                          "CDR3 first", "CDR3 first counts","CDR3 first identity","CDR3 first unique reads",
-                                                                          "CDR3 second", "CDR3 second counts","CDR3 second identity","CDR3 second unique reads"]]
+        df1 = df1[['Well_ID','cell_name','reads_freq','plate_total_reads','umi_distribution',"unique_var_region","V_first","V_first_counts","V_first_avg_e_value",
+                                                                          "V_second","V_second_counts","V_second_avg_e_value",
+                                                                          "D_first","D_first_counts","D_first_avg_e_value",
+                                                                          "D_second","D_second_counts","D_second_avg_e_value",
+                                                                          "J_first", "J_first_counts","J_first_avg_e_value",
+                                                                          "J_second", "J_second_counts","J_second_avg_e_value",
+                                                                          "CDR3_first", "CDR3_first_counts","CDR3_first_identity","CDR3_first_unique_reads",
+                                                                          "CDR3_translation_first","CDR3_translation_first_counts","CDR3_translation_first_identity","CDR_translation_first_unique_reads",
+                                                                          "CDR3_second", "CDR3_second_counts","CDR3_second_identity","CDR3_second_unique_reads",
+                                                                          "CDR3_translation_second","CDR3_translation_second_counts","CDR3_translation_second_identity",
+                                                                          "CDR3_translation_second_unique_reads"]]
         df1.to_csv(self.output_dir + "/final_table.csv")
 
 
@@ -264,7 +274,7 @@ class Cell_Task(Task):
         # self.locus_names = ["TCRA", "TCRB"]
 
     def run(self, **kwargs):
-        self.collapse_uniq_seqs()
+        #self.collapse_uniq_seqs()
         self.cell_name=self.cell_name.split("_")[0]
         cell = self.ig_blast()
 
@@ -288,7 +298,9 @@ class Cell_Task(Task):
     def collapse_uniq_seqs(self):
         for locus in self.loci:
             new_fasta = os.path.join(self.output_dir,self.cell_name) + "_"+ self.receptor_name + "_" + locus + "_collapsed.fasta"
-            temp_uniq = subprocess.getoutput("""cat %s | awk 'NR%s==0' | sort | uniq -c | sort -n""" % (self.fasta,"%2")).split("\n")
+            subprocess.getoutput("""fastx_collapser -i %s -o %s""" % (self.fasta,new_fasta))
+            #temp_uniq = subprocess.getoutput("""cat %s | awk 'NR%s==0' | sort | uniq -c | sort -n""" % (self.fasta,"%2")).split("\n")
+            """
             with open(new_fasta,'w') as fasta_file:
                 for row in temp_uniq:
                     seq = row.strip().split(" ")[1].strip("\n")
@@ -296,7 +308,9 @@ class Cell_Task(Task):
                     query_name = ">" + num
                     fasta_file.write(query_name + "\n")
                     fasta_file.write(seq + "\n")
+            """
             self.fasta = new_fasta
+
 
 
     def ig_blast(self):
@@ -316,7 +330,7 @@ class Cell_Task(Task):
         print()
 
         with warnings.catch_warnings():
-            cell = io_func.parse_IgBLAST(self.receptor_name, self.loci,
+            cell = io_func.parse_IgBLAST(self.fasta,self.receptor_name, self.loci,
                                          self.output_dir, self.cell_name, imgt_seq_location,
                                          self.species, 'imgt',
                                          50)
@@ -335,7 +349,7 @@ class _CELLrun(LSF):
         """
 
         # build the alignment comand
-        cell_cmd = "python3.5 /home/labs/amit/diklag/PycharmProjects/VDJ_Dikla/gelSeq.py cell -s "+ species +" --loci=" + loci + " --receptor_name=" + receptor_name + " " + fasta + " " + name + " " + output_dir
+        cell_cmd = "python3.5 " + os.path.join(base_dir,"gelSeq.py") + " cell -s "+ species +" --loci=" + loci + " --receptor_name=" + receptor_name + " " + fasta + " " + name + " " + output_dir
 
         self.cmd = cell_cmd
 

@@ -3,6 +3,7 @@ import subprocess
 from collections import defaultdict
 from scipy.signal import argrelextrema
 import itertools
+from itertools import groupby
 import numpy as np
 import pandas as pd
 import copy
@@ -34,46 +35,8 @@ def log_thresh(x):
     i = argrelextrema(hist, np.less)[0][-1]
     return np.exp(i)
 
-def collapse_uniq_sequnces(fastq2):
-    # reading all 15-mers in the current plate (current fastq2 - fastq file of read2), sorting them by frequency
-    column = subprocess.getoutput(
-        """gunzip -c %s | awk 'NR%s==2' | cut -b 1-15 | sort | uniq -c | sort -n """ % (fastq2, "%4")).split("\n")
-    columns = [(int(column[i].strip().split(" ")[0]), column[i].strip().split(" ")[1][0:7],
-                column[i].strip().split(" ")[1][7:15]) for i in range(0, len(column))]
-    # creating a data frame from the 3-dim list above
-    plate_seqs = pd.DataFrame(columns, columns=["num", "cell_barcode", "umi_barcode" ])
-    high_confidence_barcodes = plate_seqs.sort_values(by= "num", ascending=False)
-
-    return high_confidence_barcodes
-
-
-def create_fasta_per_cell_stat(fastq1, fastq2, barcodes, output_dir):
-    fastq1_dest = os.path.join(output_dir, os.path.basename(fastq1).split(".gz")[0])
-    gunzip_fastq(fastq1, fastq1_dest)
-    fastq2_dest = os.path.join(output_dir, os.path.basename(fastq2).split(".gz")[0])
-    gunzip_fastq(fastq2, fastq2_dest)
-    with open(fastq1_dest) as f1, open(fastq2_dest) as f2:
-        r1 = f1.readlines()
-        r2 = f2.readlines()
-        for line in range(1, len(r1), 4):
-            cell_barcode = r2[line][0:7]
-            umi_barcode = r2[line][7:15]
-            if ((barcodes["cell_barcode"] == cell_barcode) & (barcodes["umi_barcode"] == umi_barcode)).any():
-                cell_name = str(barcodes[((barcodes["cell_barcode"] == cell_barcode) & (barcodes["umi_barcode"] == umi_barcode))].iloc[
-                    0]["cell_name"])
-                file_name = cell_name + "_" +cell_barcode + "_" + umi_barcode
-                with open(file_name, 'a') as fa:
-                    fasta_line = r1[line]
-                    query_line = ">" + r1[line - 1][1:-1] + " " + cell_barcode + umi_barcode + "\n"
-                    fa.write(query_line)
-                    fa.write(fasta_line)
-    os.remove(fastq1_dest)
-    os.remove(fastq2_dest)
-
-
 def gunzip_fastq(file,dest):
     subprocess.getoutput("""gunzip -c %s > %s  """ % (file, dest))
-
 
 # simple hamming distance
 def hamming_distance(str1,str2,max_dist):
@@ -116,7 +79,67 @@ def get_barcode_dict(map_cell_to_barcode,unmapped):
     return barcode_dict, well_to_barcode
 
 
-def create_fasta_per_cell(barcode_to_well, fastq1, fastq2, filtered_in_mapped_barcodes, output_dir):
+def create_fasta_per_cell_new(fastq1, fastq2, filtered_in_mapped_barcodes, output_dir,total_reads):
+    fastq1_dest = os.path.join(output_dir, os.path.basename(fastq1).split(".gz")[0])
+    gunzip_fastq(fastq1, fastq1_dest)
+    fastq2_dest = os.path.join(output_dir, os.path.basename(fastq2).split(".gz")[0])
+    gunzip_fastq(fastq2, fastq2_dest)
+    final_output = pd.DataFrame(columns=["Well_ID", "cell_name",'plate_total_reads', "reads_freq", "umi_distribution", "unique_var_region"])
+    with open(fastq1_dest) as f1, open(fastq2_dest) as f2:
+        r1 = f1.readlines()
+        #r2 = f2.readlines()
+        for name,group in filtered_in_mapped_barcodes.groupby(by="well_coordinates"):
+            cell_name = name
+            cell_fasta_file = output_dir + "/" + cell_name + ".fasta"
+            reads = []
+            umi_dict = dict()
+            for index,row in group.iterrows():
+                cell_barcode = row["cell_barcode"]
+                umi_barcode = row["umi_barcode"]
+                original_umi_barcode = row["original_umi_barcode"]
+                lines = subprocess.getoutput(
+                """grep -n %s %s | cut -d ":" -f1 """ % (
+                cell_barcode + umi_barcode,fastq2_dest))
+                lines = lines.split("\n")
+                lines = [int(i) - 1 for i in lines]
+                umi_dict.update({key:original_umi_barcode for key in lines})
+                reads.extend(lines)
+            # generate a data frame of reads and their hyper variable region
+            df2 = pd.DataFrame([(r1[i], r1[i][80:130],umi_dict[i]) for i in reads if len(r1[i]) > 130])
+            if len(df2) == 0:
+                continue
+            df2.columns = ["read","hvr","original_umi_barcode"]
+            df_full_reads = pd.DataFrame(df2.groupby(by=["hvr","original_umi_barcode", "read"]).size().sort_values(ascending=False))
+            df_full_reads.columns = ["read_freq"]
+            df_full_reads.reset_index(inplace=True)
+            df_hvr = pd.DataFrame(df2.groupby(by=["hvr"]).size().sort_values(ascending=False).head())
+            df_hvr.columns = ["hvr_freq"]
+            df_hvr.reset_index(inplace=True)
+            # peeking only reads with abundant hyper variable region
+            m = pd.merge(df_full_reads, df_hvr, on="hvr", how='right').sort_values(by="read_freq",ascending=False).reset_index(drop=True)
+            with open(cell_fasta_file, 'a') as fa:
+                for index,row in m.iterrows():
+                    query_line = ">" + str(index) + ":" + row["original_umi_barcode"] + "-" + str(row["read_freq"]) + "\n"
+                    fa.write(query_line)
+                    fa.write(row["read"])
+            well_id = group["Well_ID"].iloc[0]
+            final_output = final_output.append(
+                    [{"Well_ID": well_id, "cell_name": cell_name, 'plate_total_reads': total_reads,
+                      "reads_freq": m["read_freq"].sum(),
+                      "umi_distribution": " ".join([str(int(count)) for count in
+                                                    m.groupby("original_umi_barcode")["read_freq"].sum().sort_values(
+                                                        ascending=False).values]),"unique_var_region": " ".join([str(int(count)) for count in
+                                                    m.groupby("hvr")["read_freq"].sum().sort_values(
+                                                        ascending=False).values])}])
+            final_output = final_output.sort_values(by="reads_freq", ascending=False)
+            final_output.to_csv(os.path.join(output_dir, "final_output.csv"), index=False)
+
+    os.remove(fastq1_dest)
+    os.remove(fastq2_dest)
+
+
+
+def create_fasta_per_cell(fastq1, fastq2, filtered_in_mapped_barcodes, output_dir):
     fastq1_dest = os.path.join(output_dir, os.path.basename(fastq1).split(".gz")[0])
     gunzip_fastq(fastq1, fastq1_dest)
     fastq2_dest = os.path.join(output_dir, os.path.basename(fastq2).split(".gz")[0])
@@ -129,7 +152,9 @@ def create_fasta_per_cell(barcode_to_well, fastq1, fastq2, filtered_in_mapped_ba
             umi_barcode = r2[line][7:15]
             if ((filtered_in_mapped_barcodes["cell_barcode"] == cell_barcode) & (
                         filtered_in_mapped_barcodes["umi_barcode"] == umi_barcode)).any():
-                cell_name = barcode_to_well[cell_barcode]
+                row = filtered_in_mapped_barcodes[(filtered_in_mapped_barcodes["cell_barcode"] == cell_barcode) & (
+                        filtered_in_mapped_barcodes["umi_barcode"] == umi_barcode)].iloc[0]
+                cell_name=row["well_coordinates"]
                 cell_fasta_file = output_dir + "/" + cell_name + ".fasta"
                 with open(cell_fasta_file, 'a') as fa:
                     fasta_line = r1[line]
@@ -140,7 +165,78 @@ def create_fasta_per_cell(barcode_to_well, fastq1, fastq2, filtered_in_mapped_ba
     os.remove(fastq2_dest)
 
 
+def create_fasta_per_umi(fastq1, fastq2, filtered_in_mapped_barcodes, output_dir):
+    fastq1_dest = os.path.join(output_dir, os.path.basename(fastq1).split(".gz")[0])
+    gunzip_fastq(fastq1, fastq1_dest)
+    fastq2_dest = os.path.join(output_dir, os.path.basename(fastq2).split(".gz")[0])
+    gunzip_fastq(fastq2, fastq2_dest)
+    with open(fastq1_dest) as f1, open(fastq2_dest) as f2:
+        r1 = f1.readlines()
+        r2 = f2.readlines()
+        for line in range(1, len(r1), 4):
+            cell_barcode = r2[line][0:7]
+            umi_barcode = r2[line][7:15]
+            if ((filtered_in_mapped_barcodes["cell_barcode"] == cell_barcode) & (
+                        filtered_in_mapped_barcodes["umi_barcode"] == umi_barcode)).any():
+                row = filtered_in_mapped_barcodes[(filtered_in_mapped_barcodes["cell_barcode"] == cell_barcode) & (
+                        filtered_in_mapped_barcodes["umi_barcode"] == umi_barcode)].iloc[0]
+                original_umi_barcode = row["original_umi_barcode"]
+                cell_name=row["well_coordinates"]
+                fasta_name = cell_name + "-" + original_umi_barcode
+                cell_fasta_file = output_dir + "/" + fasta_name + ".fasta"
+                with open(cell_fasta_file, 'a') as fa:
+                    fasta_line = r1[line]
+                    query_line = ">" + r1[line - 1][1:-1] + " " + cell_barcode + umi_barcode + "\n"
+                    fa.write(query_line)
+                    fa.write(fasta_line)
+    os.remove(fastq1_dest)
+    os.remove(fastq2_dest)
+
+
+def create_fasta_per_umi_and_cell(fastq1, fastq2, filtered_in_mapped_barcodes, output_dir):
+    fastq1_dest = os.path.join(output_dir, os.path.basename(fastq1).split(".gz")[0])
+    gunzip_fastq(fastq1, fastq1_dest)
+    fastq2_dest = os.path.join(output_dir, os.path.basename(fastq2).split(".gz")[0])
+    gunzip_fastq(fastq2, fastq2_dest)
+    cells_dir = os.path.join(output_dir,"cells")
+    umis_dir = os.path.join(output_dir,"cells_umis")
+    io_func.makeOutputDir(cells_dir)
+    io_func.makeOutputDir(umis_dir)
+    with open(fastq1_dest) as f1, open(fastq2_dest) as f2:
+        r1 = f1.readlines()
+        r2 = f2.readlines()
+        for line in range(1, len(r1), 4):
+            cell_barcode = r2[line][0:7]
+            umi_barcode = r2[line][7:15]
+            if ((filtered_in_mapped_barcodes["cell_barcode"] == cell_barcode) & (
+                        filtered_in_mapped_barcodes["umi_barcode"] == umi_barcode)).any():
+                row = filtered_in_mapped_barcodes[(filtered_in_mapped_barcodes["cell_barcode"] == cell_barcode) & (
+                        filtered_in_mapped_barcodes["umi_barcode"] == umi_barcode)].iloc[0]
+                original_umi_barcode = row["original_umi_barcode"]
+                cell_name=row["well_coordinates"]
+                write_fasta_line(cell_barcode, cell_name, r1[line], r1[line-1],cells_dir, umi_barcode)
+                name = cell_name + "-" + original_umi_barcode
+                write_fasta_line(cell_barcode,name,r1[line],r1[line-1], umis_dir, umi_barcode)
+    os.remove(fastq1_dest)
+    os.remove(fastq2_dest)
+
+def write_fasta_line(cell_barcode, fasta_name, line,prev_line ,output_dir, umi_barcode):
+    cell_fasta_file = output_dir + "/" + fasta_name + ".fasta"
+    with open(cell_fasta_file, 'a') as fa:
+        fasta_line = line
+        query_line = ">" + prev_line[1:-1] + " " + cell_barcode + umi_barcode + "\n"
+        fa.write(query_line)
+        fa.write(fasta_line)
+
+
 def split_to_cells(plate_name,wells_cells_file,output_dir,fastq1,fastq2,f):
+    ## In order to reduce the noise and running time, we need to drop out unwanted reads
+    # first way to handle it: filter by read2 (by kmers):
+    ## 1. drop out reads with kmers frequency less than 4
+    ## 2. droup out reads with same (similar or identitcal) umi barcode but different cell barcode and keep only the reads with the abundant cell barcode
+    # second way to handle it: filter by read1 (by the gene sequene)
+    ##
+
     log_file = os.path.join(output_dir,"split_log.log")
     log = open(log_file, 'w')
     column = subprocess.getoutput(
@@ -159,8 +255,7 @@ def split_to_cells(plate_name,wells_cells_file,output_dir,fastq1,fastq2,f):
     m = pd.merge(plate_seqs, map_cell_to_barcode, left_on="cell_barcode", right_on="Cell_barcode", how='outer')
     m = m.sort_values(by="num", ascending=False)
     m = m.reset_index(drop=True)
-    m["kmer_representative"] = m["cell_barcode"] + m["umi_barcode"]
-    m["original_umi_barcode"] = ""
+    m["original_umi_barcode"] = None
     mapped_barcodes = copy.deepcopy(m.loc[m["Well_ID"].notnull(),])
     un_mapped_barcodes = copy.deepcopy(m.loc[m["Well_ID"].isnull(),])
     # generating barcode to well dict
@@ -172,7 +267,13 @@ def split_to_cells(plate_name,wells_cells_file,output_dir,fastq1,fastq2,f):
     log.write("mapped_wells_not_filtered\t" + str(mapped_barcodes["Well_ID"].nunique()) + "\n")
     log.write("mapped_kmers_not_filtered\t" + str(len(mapped_barcodes)) + "\n")
     log.write("unmapped_kmers_not_filtered\t" + str(len(un_mapped_barcodes)) + "\n")
-    log.write("filter kmers with less than " + str(t) + " repetitions" + "\n")
+    thresh = mapped_barcodes[mapped_barcodes["well_coordinates"].isin(["O1", "O2", "P1", "P2"])]["num"].max()
+    if thresh > 0:
+        log.write("control_threshold_not_filtered\t" + str(thresh) +"\n")
+    else:
+        log.write("control_threshold_not_filtered\t" + str(0) + "\n")
+
+    log.write("filter_kmers_with_less_than " + str(t) + " repetitions" + "\n")
     un_mapped_barcodes = copy.deepcopy(un_mapped_barcodes.loc[un_mapped_barcodes["num"] >= t,])
     filtered_in_mapped_barcodes = copy.deepcopy(mapped_barcodes.loc[mapped_barcodes["num"] >= t,])
     log.write("total_reads_after_filtering\t" + str(filtered_in_mapped_barcodes["num"].sum()) + "\n")
@@ -181,7 +282,7 @@ def split_to_cells(plate_name,wells_cells_file,output_dir,fastq1,fastq2,f):
     log.write("unmapped_kmers_filtered\t" + str(len(un_mapped_barcodes)) + "\n")
     log.write("total_unmapped_reads_after_filtering\t" + str(un_mapped_barcodes["num"].sum()) + "\n")
 
-
+    # iterating on unmapped reads with cell barcode similar to mapped one
     sorted_wells = filtered_in_mapped_barcodes.groupby("Well_ID")["num"].max().sort_values(ascending=False).index
     for well in sorted_wells:
         well_table = filtered_in_mapped_barcodes[filtered_in_mapped_barcodes["cell_barcode"] == well_to_barcode[well]]
@@ -189,18 +290,15 @@ def split_to_cells(plate_name,wells_cells_file,output_dir,fastq1,fastq2,f):
             unmapped = un_mapped_barcodes[un_mapped_barcodes["cell_barcode"].isin(barcode_dict[well_to_barcode[well]])]
             for index2, row2 in unmapped.iterrows():
                 if hamming_distance(row["umi_barcode"], row2["umi_barcode"], 2) <= 1:
-                    filtered_in_mapped_barcodes.loc[index2, ["Well_ID","well_coordinates"]] = row[["Well_ID","well_coordinates"]]
+                    filtered_in_mapped_barcodes.loc[index2, ["Well_ID","well_coordinates","original_umi_barcode"]] = row[["Well_ID","well_coordinates","original_umi_barcode"]]
                     filtered_in_mapped_barcodes.loc[index2, ["num","cell_barcode","umi_barcode"]] = row2[["num","cell_barcode","umi_barcode"]]
                     un_mapped_barcodes = un_mapped_barcodes.drop(index2)
-
     filtered_in_mapped_barcodes[["Well_ID","well_coordinates","num","cell_barcode","umi_barcode","original_umi_barcode"]].to_csv(os.path.join(output_dir,"high_conf_before_filtering.csv"),index=False)
-
     log.write("total_reads_after_adding_unmapped_barcodes\t" + str(filtered_in_mapped_barcodes["num"].sum()) + "\n")
     log.write("mapped_wells_after_adding_unmapped_barcodes\t" + str(filtered_in_mapped_barcodes["Well_ID"].nunique()) + "\n")
     log.write("mapped_kmers_after_adding_unmapped_barcodes\t" + str(len(mapped_barcodes)) + "\n")
     log.write("unmapped_kmers_after_adding_unmapped_barcodes\t" + str(len(un_mapped_barcodes)) + "\n")
     log.write("total_unmapped_reads_after_adding_unmapped_barcodes\t" + str(un_mapped_barcodes["num"].sum()) + "\n")
-
     # for each umi in each well - decide what is the original sequence
     filtered_in_mapped_barcodes = filtered_in_mapped_barcodes.sort_index()
     for name, group in filtered_in_mapped_barcodes.groupby(by="Well_ID"):
@@ -211,9 +309,13 @@ def split_to_cells(plate_name,wells_cells_file,output_dir,fastq1,fastq2,f):
                     if hamming_distance(row["umi_barcode"],dom,3) <=2:
                         filtered_in_mapped_barcodes.loc[index,"original_umi_barcode"] = dom
                         break
-                if filtered_in_mapped_barcodes.loc[index,"original_umi_barcode"] == "":
+                if filtered_in_mapped_barcodes.loc[index,"original_umi_barcode"] is None:
                     dom_umi.append(row["umi_barcode"])
                     filtered_in_mapped_barcodes.loc[index,"original_umi_barcode"] = row["umi_barcode"]
+        else:
+            for index, row in group.iterrows():
+                filtered_in_mapped_barcodes.loc[index,"original_umi_barcode"] = row["umi_barcode"]
+
 
     filtered_in_mapped_barcodes = filtered_in_mapped_barcodes.sort_index()
     # dropping out reads with similar/identical umi barcode (mapped to different wells) and similar umi barcode with lower frequency
@@ -222,9 +324,8 @@ def split_to_cells(plate_name,wells_cells_file,output_dir,fastq1,fastq2,f):
             if group["Well_ID"].nunique()>1:
                 dom_well = group.iloc[0]["Well_ID"]
                 filtered_in_mapped_barcodes = filtered_in_mapped_barcodes.drop(group[group["Well_ID"] != dom_well].index)
-        log.write("total filterd mapped kmers after " + field + " filtering\t" + str(len(filtered_in_mapped_barcodes)) + "\n")
-        log.write("total filterd mapped wells after " + field + " filtering\t" + str(filtered_in_mapped_barcodes["Well_ID"].nunique()) + "\n")
-
+        log.write("total_filterd_mapped_kmers_after_" + field + "_filtering\t" + str(len(filtered_in_mapped_barcodes)) + "\n")
+        log.write("total_filterd_mapped_wells_after_" + field + "_filtering\t" + str(filtered_in_mapped_barcodes["Well_ID"].nunique()) + "\n")
 
     # dropping out reads with similar cell barcode (mapped to different wells) and similar umi barcode with lower frequency
     sorted_wells = filtered_in_mapped_barcodes.groupby("Well_ID")["num"].max().sort_values(ascending=False).index
@@ -241,22 +342,32 @@ def split_to_cells(plate_name,wells_cells_file,output_dir,fastq1,fastq2,f):
                         filtered_in_mapped_barcodes = filtered_in_mapped_barcodes.drop(index)
                         break
 
-
-    log.write("total filterd mapped kmers after cell barcode similarity filtering\t" + str(len(filtered_in_mapped_barcodes)) + "\n")
-    log.write("total filterd mapped wells after cell barcode similarity filtering\t" + str(
+    log.write("total_filterd_mapped_kmers_after_cell_barcode_similarity_filtering\t" + str(len(filtered_in_mapped_barcodes)) + "\n")
+    log.write("total_filterd_mapped_wells_after_cell_barcode_similarity_filtering\t" + str(
         filtered_in_mapped_barcodes["Well_ID"].nunique()) + "\n")
 
     filtered_in_mapped_barcodes[["Well_ID","well_coordinates","num","cell_barcode","umi_barcode","original_umi_barcode"]].to_csv(os.path.join(output_dir,"high_conf_before_control_cut.csv"),index=False)
 
+    old_thresh = 0 if thresh <= 0 else thresh
     thresh = filtered_in_mapped_barcodes[filtered_in_mapped_barcodes["well_coordinates"].isin(["O1", "O2", "P1", "P2"])]["num"].max()
     if thresh > 0:
-        log.write("control threshold\t" + str(thresh) +"\n")
-        filtered_in_mapped_barcodes = filtered_in_mapped_barcodes[filtered_in_mapped_barcodes["num"] > thresh]
+        log.write("control_threshold_after_filtering\t" + str(thresh) +"\n")
+    else:
+        log.write("control_threshold_after_filtering\t" + str(old_thresh) + "\n")
 
+    """
+    filtered_in_mapped_barcodes = filtered_in_mapped_barcodes[filtered_in_mapped_barcodes["num"] > thresh]
     filtered_in_mapped_barcodes[["Well_ID","well_coordinates","num","cell_barcode","umi_barcode","original_umi_barcode"]].to_csv(os.path.join(output_dir, "high_conf.csv"),index=False)
-    log.write("total filterd mapped kmers after cutting the control threshold filtering\t" + str(len(filtered_in_mapped_barcodes)) +"\n")
-    log.write("total filterd mapped wells after cutting the control threshold cell barcode similarity filtering\t" + str(
+    log.write("total_filterd_mapped_kmers_after_cutting_the_control_threshold_filtering\t" + str(len(filtered_in_mapped_barcodes)) +"\n")
+    log.write("total_filterd_mapped_wells_after_cutting_the_control_threshold_cell_barcode_similarity_filtering\t" + str(
         filtered_in_mapped_barcodes["Well_ID"].nunique()) +"\n")
+    """
+    """
+    cells_dir = os.path.join(output_dir,"cells")
+    umis_dir = os.path.join(output_dir,"cells_umis")
+    io_func.makeOutputDir(cells_dir)
+    io_func.makeOutputDir(umis_dir)
+    """
 
     map_cell_to_barcode = filtered_in_mapped_barcodes[["cell_barcode", "Well_ID","well_coordinates"]].drop_duplicates()
     barcode_to_well = pd.Series(map_cell_to_barcode.well_coordinates.values,index=map_cell_to_barcode.cell_barcode).to_dict()
@@ -270,97 +381,22 @@ def split_to_cells(plate_name,wells_cells_file,output_dir,fastq1,fastq2,f):
                       "umi_distribution":" ".join([str(int(count)) for count in cell_group.groupby("original_umi_barcode")["num"].sum().sort_values(ascending=False).values])}])
     final_output = final_output.sort_values(by="reads_freq",ascending=False)
     final_output.to_csv(os.path.join(output_dir,"final_output.csv"),index = False)
+
+    """
+    final_output = pd.DataFrame(columns=["Well_ID","cell_name","reads_freq","umi_distribution"])
+    groups = filtered_in_mapped_barcodes.groupby("well_coordinates")
+    for cell_name, cell_group in groups:
+        well_id = cell_group.iloc[0]["Well_ID"]
+        for umi_name, umi_group in cell_group.groupby("original_umi_barcode"):
+            final_output = final_output.append([{"Well_ID": well_id,"cell_name":cell_name+"-"+umi_name, 'plate_total_reads': total_reads,
+                          "reads_freq": umi_group["num"].sum(),
+                                                 "umi_distribution":" ".join([row["cell_barcode"]+row["umi_barcode"]+":"+str(int(row["num"]))
+                                                                              for i,row in umi_group.sort_values(by="num",ascending=False).iterrows()])}])
+    final_output = final_output.sort_values(by="reads_freq",ascending=False)
+    final_output.to_csv(os.path.join(umis_dir,"final_output.csv"),index = False)
+    """
+
     log.close()
-    create_fasta_per_cell(barcode_to_well, fastq1, fastq2, filtered_in_mapped_barcodes, output_dir)
 
-
-
-"""""
-    filt_in_wells = filtered_in_mapped_barcodes["Well_ID"].unique()
-    filt_out_wells = [x for x in mapped_barcodes["Well_ID"].unique() if x not in filtered_in_mapped_barcodes["Well_ID"].unique()]
-    filtered_out_mapped_barcodes = mapped_barcodes[(mapped_barcodes["num"] < t) & (mapped_barcodes["num"] > 4)]
-    filtered_in_mapped_barcodes = mapped_barcodes[mapped_barcodes["num"] >= t]
-    mapped_wells_filtered = len(pd.unique(filtered_in_mapped_barcodes["Well_ID"]))
-    log.write("mapped_wells_filtered_after_first_collapse\t" + str(mapped_wells_filtered) + "\n")
-    wells_out = pd.unique(filtered_out_mapped_barcodes["Well_ID"])
-    filtered_out_wells = [x for x in wells_out if x not in pd.unique(filtered_in_mapped_barcodes["Well_ID"])]
-    log.write("filtered_out_wells:\t" + str(len(filtered_out_wells)))
-    # updating the filtered_out_mapped_barcodes
-    changed_barcodes = dict()
-    for index,row in filtered_out_mapped_barcodes.iterrows():
-        i = find_relative(filtered_in_mapped_barcodes, row["kmer_representative"],3)
-        if i!=-1:
-            if filtered_in_mapped_barcodes.loc[i]["Well_ID"] != row["Well_ID"]:
-                changed_barcodes[index] = i
-                row["Well_ID"] = filtered_in_mapped_barcodes.loc[i]["Well_ID"]
-                row["well_coordinates"] = filtered_in_mapped_barcodes.loc[i]["well_coordinates"]
-                row["kmer_representative"] = filtered_in_mapped_barcodes.loc[i]["kmer_representative"]
-                filtered_out_mapped_barcodes.loc[index] = row
-
-    for index,row in filtered_out_mapped_barcodes.iterrows():
-        i = find_umi_relative(filtered_out_mapped_barcodes[index:],row["umi_barcode"],row["cell_barcode"],1)
-        if i!=-1:
-            filtered_out_mapped_barcodes.loc[i]["kmer_representative"] = row["kmer_representative"]
-
-
-    for name,group in filtered_out_mapped_barcodes.groupby("Well_ID"):
-        for index,row in group.iterrows():
-            if row["kmer_representative"] == row["cell_barcode"] + row["umi_barcode"]:
-
-
-    kmer_distribution = filtered_mapped_barcodes.groupby("Well_ID")["num"].apply(list)
-    kmer_distribution_2 = filtered_mapped_barcodes.groupby("Well_ID")["kmer_representative"].apply(list)
-    pd.DataFrame({"kmer": kmer_distribution_2, "num": kmer_distribution}).to_csv(os.path.join(output_dir,"kmers_dist.csv"))
-
-
-def new_split_by_cells(plate_name,wells_cells_file,output_dir,fastq1,fastq2,f):
-    #fastq1 = "/home/labs/amit/weiner/Work/HANJAY/MiSeq/170621_M01759_0051_000000000-B8BWN/fastq/143_S7_L001_R1_001.fastq.gz"
-    #fastq2 = "/home/labs/amit/weiner/Work/HANJAY/MiSeq/170621_M01759_0051_000000000-B8BWN/fastq/143_S7_L001_R2_001.fastq.gz"
-    columns = [(int(column[i].strip().split(" ")[0]), column[i].strip().split(" ")[1][0:7],
-                column[i].strip().split(" ")[1][7:15]) for i in range(0, len(column))]
-    #map_cell_to_barcode = pd.read_csv("/home/labs/amit/diklag/files/wells_cells.txt", delimiter='\t', usecols=['Well_ID', 'well_coordinates', 'Cell_barcode', 'Amp_batch_ID'])
-    map_cell_to_barcode = pd.read_csv(wells_cells_file, delimiter='\t',usecols = ['Well_ID','well_coordinates', 'Cell_barcode', 'Amp_batch_ID'])
-    #map_cell_to_barcode = map_cell_to_barcode[map_cell_to_barcode['Amp_batch_ID'] == "AB2912"]
-    map_cell_to_barcode = map_cell_to_barcode[map_cell_to_barcode['Amp_batch_ID'] == plate_name]
-    plate_seqs = pd.DataFrame(columns, columns=["num", "cell_barcode", "umi_barcode"])
-    x = np.array([int(column[i].strip().split(" ")[0]) for i in range(0, len(column))])
-    # find the threshold number
-    t = log_thresh(x)
-    m = pd.merge(plate_seqs, map_cell_to_barcode, left_on="cell_barcode", right_on="Cell_barcode", how='outer')
-    m = m.sort_values(by="num", ascending=False)
-    mapped_barcodes = m[m["Well_ID"].notnull()]
-    un_mapped_barcodes = m[m["Well_ID"].isnull()]
-    un_mapped_barcodes = un_mapped_barcodes[un_mapped_barcodes["num"] > t]
-    filtered_mapped_barcodes = mapped_barcodes
-    filtered_mapped_barcodes["kmer_representative"] = filtered_mapped_barcodes["cell_barcode"] + filtered_mapped_barcodes["umi_barcode"]
-    for index,row in un_mapped_barcodes.iterrows():
-        cell_barcode = row["cell_barcode"]
-        umi_barcode = row["umi_barcode"]
-        kmer = cell_barcode+umi_barcode
-        i = find_relative(filtered_mapped_barcodes,kmer)
-        if i!=-1:
-            new_row = row
-            new_row["Well_ID"] = filtered_mapped_barcodes.loc[i]["Well_ID"]
-            new_row["well_coordinates"] = filtered_mapped_barcodes.loc[i]["well_coordinates"]
-            new_row["kmer_representative"] = filtered_mapped_barcodes.loc[i]["kmer_representative"]
-            filtered_mapped_barcodes = filtered_mapped_barcodes.append(new_row)
-    filtered_mapped_barcodes["kmer_total_num"] = filtered_mapped_barcodes["num"].groupby(
-            filtered_mapped_barcodes["kmer_representative"]).transform('sum')
-    filtered_mapped_barcodes = filtered_mapped_barcodes.sort_values(by="kmer_total_num",ascending=False)
-    x = np.array(filtered_mapped_barcodes["kmer_total_num"].sort_values())
-    hist, not_important = np.histogram(np.log(x), density=True, bins=int(np.ceil(np.log(x)[-1])))
-    i = argrelextrema(hist, np.less)
-    low_rate = filtered_mapped_barcodes[filtered_mapped_barcodes["kmer_total_num"] <= np.exp(i)]
-    high_rate = filtered_mapped_barcodes[filtered_mapped_barcodes["kmer_total_num"] > np.exp(i)]
-    for index,row in low_rate.iterrows():
-        kmer = row["kmer_representative"]
-        i = find_relative(high_rate,kmer)
-        if i!=-1:
-            row["kmer_representative"] = high_rate.loc[i]["kmer_representative"]
-        high_rate = high_rate.append(row)
-    high_rate["kmer_total_num"] = high_rate["num"].groupby(high_rate["kmer_representative"]).transform('sum')
-
-"""""
-
-
+    create_fasta_per_cell_new(fastq1, fastq2, filtered_in_mapped_barcodes, output_dir,total_reads)
 
