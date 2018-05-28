@@ -4,17 +4,13 @@ import pickle
 import subprocess
 import sys
 import warnings
-
 import pandas as pd
-
-sys.path.insert(0, '/home/labs/amit/diklag/PycharmProjects/VDJ_Dikla/python_lsf_wrapper/')
+from gelSeqLib import base_dir
+sys.path.insert(0, os.path.join(base_dir,'python_lsf_wrapper/'))
 from python_lsf_wrapper.LSF import LSF, wait_for_jobs
-
 from configparser import ConfigParser
-
 from gelSeqLib import plate_to_cells,VDJ_func
 from gelSeqLib import io_func
-from gelSeqLib import base_dir
 
 
 
@@ -84,8 +80,6 @@ class Plate_Task(Task):
 
     def __init__(self, **kwargs):
         if not kwargs:
-            # get list of all available species in resources
-
             self.parser = argparse.ArgumentParser(add_help=True,description="Process fastq files from single plate, split the reads by cell basrcodes",
                 parents=[self.base_parser],
                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -116,7 +110,7 @@ class Plate_Task(Task):
                                 help="Continue the full process - after splitting to cells, create new job for each cell",
                                 action="store_true")
             self.parser.add_argument('--filter',
-                                help="umis with more than filter reads (with respect to quantile) will be saved",type=float, default=0.98)
+                                help="umis with more than filter reads (with respect to quantile) will be saved",type=float, default=0.96)
 
 
             args = self.parser.parse_args(sys.argv[2:])
@@ -164,8 +158,9 @@ class Plate_Task(Task):
         mapper += [_CELLrun(fasta.replace('.fasta', ''), self.output_dir + "/" + fasta, self.output_dir)
                   for fasta in os.listdir(self.output_dir) if ".fasta" in fasta]
         for job in mapper:
-            job.submit_command(cpu_cores=5, memory=600, queue="new-short")
+            job.submit_command(cpu_cores=5, memory=350, queue="new-short")
         wait_for_jobs(mapper)
+
         df1 = pd.read_csv(self.output_dir + "/final_output.csv")
         list_csv = [self.output_dir + "/" + file for file in os.listdir(self.output_dir) if ".csv" in file and "output" not in file and "high" not in file]
         df2 = pd.DataFrame(columns=["cell_name","V_first","V_first_counts","V_first_avg_e_value",
@@ -269,7 +264,6 @@ class Cell_Task(Task):
         # self.locus_names = ["TCRA", "TCRB"]
 
     def run(self, **kwargs):
-        #self.collapse_uniq_seqs()
         self.cell_name=self.cell_name.split("_")[0]
         cell = self.ig_blast()
 
@@ -288,23 +282,6 @@ class Cell_Task(Task):
                             output_dir=self.output_dir,
                             cell_name=cell.name,
                             receptor=self.receptor_name, locus=locus))
-
-
-    def collapse_uniq_seqs(self):
-        for locus in self.loci:
-            new_fasta = os.path.join(self.output_dir,self.cell_name) + "_"+ self.receptor_name + "_" + locus + "_collapsed.fasta"
-            subprocess.getoutput("""fastx_collapser -i %s -o %s""" % (self.fasta,new_fasta))
-            #temp_uniq = subprocess.getoutput("""cat %s | awk 'NR%s==0' | sort | uniq -c | sort -n""" % (self.fasta,"%2")).split("\n")
-            """
-            with open(new_fasta,'w') as fasta_file:
-                for row in temp_uniq:
-                    seq = row.strip().split(" ")[1].strip("\n")
-                    num = row.strip().split(" ")[0].strip("\n")
-                    query_name = ">" + num
-                    fasta_file.write(query_name + "\n")
-                    fasta_file.write(seq + "\n")
-            """
-            self.fasta = new_fasta
 
 
 
