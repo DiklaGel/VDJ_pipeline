@@ -45,6 +45,7 @@ def wait_for_jobs(job_list):
     while any([j.job_status_running() for j in job_list]):
         sleep(60)
         gc.collect()
+    sleep(60)
 
 
 def count_jobs(job_list):

@@ -74,7 +74,9 @@ def create_fasta_per_cell(fastq1, fastq2, filtered_in_mapped_barcodes, output_di
             df_hvr.reset_index(inplace=True)
             # peeking only reads with abundant hyper variable region
             m = pd.merge(df_full_reads, df_hvr, on="hvr", how='right').sort_values(by="read_freq",ascending=False).reset_index(drop=True)
-            m = m.drop(m["read"].str.contains("N"))
+            m = m[~m["read"].str.contains("N")].reset_index(drop=True)
+            if len(m) == 0:
+                continue
             with open(cell_fasta_file, 'a') as fa:
                 for index,row in m.iterrows():
                     query_line = ">" + str(index) + ":" + row["original_umi_barcode"] + "-" + str(row["read_freq"]) + "\n"

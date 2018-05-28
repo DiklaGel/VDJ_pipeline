@@ -154,8 +154,7 @@ class Plate_Task(Task):
 
 
         self.split_to_cells()
-        mapper = []
-        mapper += [_CELLrun(fasta.replace('.fasta', ''), self.output_dir + "/" + fasta, self.output_dir)
+        mapper = [_CELLrun(fasta.replace('.fasta', ''), self.output_dir + "/" + fasta, self.output_dir)
                   for fasta in os.listdir(self.output_dir) if ".fasta" in fasta]
         for job in mapper:
             job.submit_command(cpu_cores=5, memory=350, queue="new-short")
