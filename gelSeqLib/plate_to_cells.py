@@ -114,7 +114,8 @@ def split_to_cells(plate_name,wells_cells_file,output_dir,fastq1,fastq2,f):
     total_reads = plate_seqs["num"].sum()
     log.write("total_reads\t" + str(total_reads) + "\n")
     t = plate_seqs["num"].quantile(f)
-    log.write("kmers_with_" + str(t) + "_repeates_are_in_the_" + str(f) + "_quantile\n")
+    log.write("cut_quantile\t" + str(f) +"\n")
+    log.write("kmers_repeates_equal_higher_than\t" + str(t) + "\n")
     # t = 4
     # reading wells cells file (mapping from cell barcode to well id/well coordinates
     map_cell_to_barcode = pd.read_csv(wells_cells_file, delimiter='\t',usecols = ['Well_ID','well_coordinates', 'Cell_barcode', 'Amp_batch_ID'])
