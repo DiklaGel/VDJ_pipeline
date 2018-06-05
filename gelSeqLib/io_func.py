@@ -136,8 +136,7 @@ def parse_IgBLAST(fasta_file,receptor, loci, output_dir, cell_name, raw_seq_dir,
     all_locus_data = defaultdict(dict)
     for locus in locus_names:
         file = "{output_dir}/{cell_name}_{locus}.IgBLASTOut".format(
-                output_dir=output_dir, cell_name=cell_name,
-                receptor=receptor, locus=locus)
+                output_dir=output_dir, cell_name=cell_name,locus=locus)
         if os.path.isfile(file):
             igblast_result_chunks = split_igblast_file(file)
             for chunk in igblast_result_chunks:

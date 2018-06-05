@@ -191,6 +191,14 @@ def find_possible_alignments(sample_dict, locus_names, cell_name, IMGT_seqs, out
                             rearrangement_summary, junction_list, good_hits,
                             returned_locus, IMGT_seqs, cell_name,
                             query_name, species, loci_for_segments)
+                        is_productive = [False,False,False]
+                        if rearrangement_summary[6] == 'Yes':
+                            is_productive[0] = True
+                        if rearrangement_summary[5] == 'In-frame':
+                            is_productive[1] = True
+                        if rearrangement_summary[4] == 'Yes':
+                            is_productive[2] = True
+
                     cdr3 = data_for_locus[query_name]['sub_region_details']
 
                     if len(junc_string) < max_junc_string_length:
@@ -386,6 +394,7 @@ def remove_allele_stars(segment):
     m = p.search(segment)
     return (m.group(1))
 
+
 def process_hit_table(query_name, query_data, locus):
     hit_table = query_data['hit_table']
     rearrangement_summary = query_data['VDJ_rearrangement_summary']
@@ -434,28 +443,6 @@ def process_hit_table(query_name, query_data, locus):
         return (None)
 
 
-
-def is_rearrangement_productive(seq):
-    # returns a tuple of three true/false values (productive, contains stop,
-    # in-frame)
-    seq_mod_3 = len(seq) % 3
-    if seq_mod_3 == 0:
-        in_frame = True
-    else:
-        in_frame = False
-
-    seq = Seq(seq, IUPAC.unambiguous_dna)
-    aa_seq = seq.translate()
-    contains_stop = "*" in aa_seq
-
-    if in_frame and not contains_stop:
-        productive = True
-    else:
-        productive = False
-
-    return (productive, contains_stop, in_frame)
-
-
 def get_segment_name(name, pattern):
     match = pattern.search(name)
     number = match.group(1)
@@ -464,7 +451,6 @@ def get_segment_name(name, pattern):
     else:
         sub_number = ""
     return (number)
-
 
 
 def collapse_close_sequences(recombinants, locus):
