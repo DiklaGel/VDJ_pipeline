@@ -72,7 +72,7 @@ In order to reduce the noise and running time, we need to drop out unwanted read
      2. Reads with similar (hamming distance <= 2) UMI sequences but different cell barcodes are excluded in a way that keeps only the abundant reads. For each cell, the sequences were also filtered by their hyper variable region abundance (positions 80-130 in the sequence). For each cell, fasta file was produced while each read represents a unique sequence with its frequency is written in the name of the read. 
 - Second: filter by read1 (by the gene sequence)
     1. For each cell, the sequences are also filtered by their hyper variable region abundance (positions 80-130 in the sequence)
-After unwanted genes are excluded, fasta file for each individual cell is created and gelSeq cell mode is called for each fasta file
+    2. After unwanted genes are excluded, fasta file for each individual cell is created and gelSeq cell mode is called for each fasta file
 
 ##### Usage
     gelSeq.py plate [-h] [--ncores <CORES>] [--config_file <CONFIG_FILE>]
