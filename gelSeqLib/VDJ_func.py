@@ -36,8 +36,6 @@ def process_chunk(chunk):
     store_alignment_summary = False
     store_hit_table = False
     store_sub_region = False
-    alignment_summary = []
-    hit_table = []
     looking_for_end = False
     return_dict = defaultdict(list)
     for line_x in chunk:
@@ -79,8 +77,6 @@ def process_chunk(chunk):
 
         elif line_x.startswith('# Query'):
             query_name = line_x.strip().split(" ")[2]
-            #query_length = line_x.split(" ")[3]
-            #return_dict['query_length'] = int(query_length.split("=")[1])
             return_dict['query_name'] = query_name
 
         elif line_x.startswith('# Sub-region sequence details'):
@@ -103,17 +99,15 @@ def process_chunk(chunk):
 def find_possible_alignments(sample_dict, locus_names, cell_name, IMGT_seqs, output_dir, species, seq_method,
                              invariant_seqs, loci_for_segments, receptor, loci,
                              max_junc_string_length,fasta_file):
-    alignment_dict = defaultdict(dict)
     recombinants = {}
     for locus in locus_names:
         recombinants[locus] = []
 
-    # recombinants = {'TCRA': [], 'TCRB': []}
     for locus in locus_names:
         data_for_locus = sample_dict[locus]
         if data_for_locus is not None:
             for query_name, query_data in six.iteritems(data_for_locus):
-                processed_hit_table = process_hit_table(query_name, query_data,
+                processed_hit_table = process_hit_table(query_data,
                                                         locus)
 
                 if processed_hit_table is not None:
@@ -395,7 +389,7 @@ def remove_allele_stars(segment):
     return (m.group(1))
 
 
-def process_hit_table(query_name, query_data, locus):
+def process_hit_table(query_data, locus):
     hit_table = query_data['hit_table']
     rearrangement_summary = query_data['VDJ_rearrangement_summary']
 

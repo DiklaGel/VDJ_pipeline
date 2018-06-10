@@ -12,26 +12,17 @@ class Basic_Cell(object):
         self.species = species
         self.barcode_df = barcode_df
 
+
 class Cell(object):
     """Class to describe T cells containing A and B loci"""
-
     def __init__(self, cell_name, recombinants, is_empty=False, species="Mmus",
                  receptor=None, loci=None):
 
         self.name = cell_name
-        self.bgcolor = None
         self.recombinants = self._process_recombinants(recombinants, receptor,
                                                        loci)
-        self.pre_filtering_reads = self.get_len()
         self.is_empty = self._check_is_empty()
         self.species = species
-
-    def get_len(self):
-        len_dict = defaultdict(dict)
-        for receptor in self.recombinants.keys():
-            for locus in  self.recombinants[receptor].keys():
-                len_dict[receptor][locus] = len(self.recombinants[receptor][locus])
-        return len_dict
 
     def _process_recombinants(self, recombinants, receptor, loci):
         recombinant_dict = defaultdict(dict)
@@ -54,235 +45,10 @@ class Cell(object):
         else:
             return False
 
-    def missing_loci_of_interest(self, receptor_name, loci):
-        recombinants = self.recombinants[receptor_name]
-        loci_of_interest = set(loci)
-        loci_in_cell = set()
-        for l in loci:
-            if l in recombinants and (
-                    recombinants[l] is not None and len(recombinants[l]) > 0):
-                loci_in_cell.add(l)
-        if len(loci_of_interest.intersection(loci_in_cell)) == 0:
-            return True
-        else:
-            return False
-
-
-    def getAllRecombinantIdentifiersForLocus(self, locus):
-        recombinants = self.all_recombinants[locus]
-        identifier_list = set()
-        if recombinants is not None:
-            for recombinant in recombinants:
-                all_possible_recombinant_identifiers = recombinant.all_poss_identifiers
-                for identifier in all_possible_recombinant_identifiers:
-                    identifier_list.add(identifier)
-        return (identifier_list)
-
-    def getMainRecombinantIdentifiersForLocus(self, receptor_name, locus):
-        recombinants = self.recombinants[receptor_name][locus]
-        identifier_list = set()
-        if recombinants is not None:
-            for recombinant in recombinants:
-                identifier_list.add(recombinant.identifier)
-        return identifier_list
-
-    # def getAllRecombinantCDR3ForLocus(self, locus):
-    #    recombinants = self.all_recombinants[locus]
-    #    identifier_list = set()
-    #    if recombinants is not None:
-    #        for recombinant in recombinants:
-    #            cdr3 = str(recombinant.cdr3)
-    #            if "Couldn't" not in cdr3:
-    #                identifier_list.add(cdr3)
-    #    return (identifier_list)
-
-    def html_style_label_dna(self, receptor, loci, colours):
-        # colours = {'A': {'productive': '#E41A1C', 'non-productive': "#ff8c8e"},
-        #           'B': {'productive': '#377eb8', 'non-productive': "#95c1e5"},
-        #           'G': {'productive': '#4daf4a', 'non-productive': "#aee5ac"},
-        #           'D': {'productive': '#984ea3', 'non-productive': "#deace5"}}
-        # locus_names = ['A', 'B', 'G', 'D']
-
-        recombinants = dict()
-        final_string = '<<FONT POINT-SIZE="16"><B>' + self.name + "</B></FONT>"
-        for locus, recombinant_list in six.iteritems(
-                self.recombinants[receptor]):
-            recombinant_set = set()
-            if recombinant_list is not None:
-                for recombinant in recombinant_list:
-                    if recombinant.productive:
-                        i = 0
-                    else:
-                        i = 1
-                    recombinant_set.add("<BR/>" + '<FONT COLOR = "{}">'.format(
-                        colours[receptor][locus][
-                            i]) + recombinant.identifier + '</FONT>')
-
-                recombinants[locus] = recombinant_set
-        for locus in loci:
-            if locus in recombinants.keys():
-                id_string = "".join(recombinants[locus])
-                final_string = final_string + id_string
-        final_string = final_string + ">"
-        return (final_string)
-        # return(self.name)
-
-    def html_style_label_for_circles(self, receptor, loci, colours):
-
-        # colours = {'A': {'productive': '#E41A1C', 'non-productive': "#ff8c8e"},
-        #           'B': {'productive': '#377eb8', 'non-productive': "#95c1e5"},
-        #           'G': {'productive': '#4daf4a', 'non-productive': "#aee5ac"},
-        #           'D': {'productive': '#984ea3', 'non-productive': "#deace5"}}
-        # locus_names = ['A', 'B', 'G', 'D']
-
-
-        recombinants = dict()
-        final_string = '<<table cellspacing="6px" border="0" cellborder="0">'
-        # final_string = "<"
-        for locus, recombinant_list in six.iteritems(
-                self.recombinants[receptor]):
-            recombinant_set = list()
-            if recombinant_list is not None:
-                for recombinant in recombinant_list:
-                    if recombinant.productive:
-                        i = 0
-                    else:
-                        i = 1
-                    recombinant_set.append(
-                        '<tr><td height="10" width="40" bgcolor="{}"></td></tr>'.format(
-                            colours[receptor][locus][i]))
-
-                recombinants[locus] = recombinant_set
-        strings = []
-        for locus in loci:
-            if locus in recombinants.keys():
-                strings.append("".join(recombinants[locus]))
-
-        id_string = "".join(strings)
-        final_string = final_string + id_string
-        final_string = final_string + "</table>>"
-        return (final_string)
 
     def __str__(self):
         return (self.name)
 
-    def full_description(self):
-        # pdb.set_trace()
-        return_list = [self.name, '#TCRA#']
-
-        if not self.A_recombinants is None:
-            for recombinant in self.A_recombinants:
-                return_list.append(str(recombinant))
-        else:
-            return_list.append("No TCRA recombinants")
-
-        return_list.append('\n#TCRB#')
-        if not self.B_recombinants is None:
-            for recombinant in self.B_recombinants:
-                return_list.append(str(recombinant))
-        else:
-            return_list.append("No TCRB recombinants")
-
-        return_list.append('\n#TCRG#')
-        if not self.G_recombinants is None:
-            for recombinant in self.G_recombinants:
-                return_list.append(str(recombinant))
-        else:
-            return_list.append("No TCRG recombinants")
-
-        return_list.append('\n#TCRD#')
-        if not self.D_recombinants is None:
-            for recombinant in self.D_recombinants:
-                return_list.append(str(recombinant))
-        else:
-            return_list.append("No TCRD recombinants")
-
-        return ("\n".join(return_list))
-
-    def get_fasta_string(self):
-        seq_string = []
-
-        for receptor, locus_dict in six.iteritems(self.recombinants):
-            for locus, recombinants in six.iteritems(locus_dict):
-                if recombinants is not None:
-                    for rec in recombinants:
-                        name = ">TRACER|{receptor}|{locus}|{contig_name}|{identifier}".format(
-                            contig_name=rec.contig_name,
-                            receptor=receptor, locus=locus,
-                            identifier=rec.identifier)
-                        seq = rec.dna_seq
-                        seq_string.append("\n".join([name, seq]))
-
-        # for locus, recombinants in six.iteritems(self.all_recombinants):
-        #    if recombinants is not None:
-        #        for rec in recombinants:
-        #            name = ">TCR|{contig_name}|{identifier}".format(contig_name=rec.contig_name,
-        #                                                            identifier=rec.identifier)
-        #            seq = rec.dna_seq
-        #            seq_string.append("\n".join([name, seq]))
-        return ("\n".join(seq_string + ["\n"]))
-
-    def summarise_productivity(self, receptor, locus):
-        if (self.recombinants is None or locus not in self.recombinants[
-            receptor] or
-                    self.recombinants[receptor][locus] is None):
-            return ("0/0")
-        else:
-            recs = self.recombinants[receptor][locus]
-            prod_count = 0
-            total_count = len(recs)
-            for rec in recs:
-                if rec.productive:
-                    prod_count += 1
-            return ("{}/{}".format(prod_count, total_count))
-
-    def filter_recombinants(self):
-        for receptor, locus_dict in six.iteritems(self.recombinants):
-            for locus, recombinants in six.iteritems(locus_dict):
-                if recombinants is not None:
-                    if len(recombinants) > 2:
-                        TPM_ranks = Counter()
-                        for rec in recombinants:
-                            TPM_ranks.update({rec.contig_name: rec.TPM})
-                        two_most_common = [x[0] for x in
-                                           TPM_ranks.most_common(2)]
-                        to_remove = []
-                        for rec in recombinants:
-                            if rec.contig_name not in two_most_common:
-                                to_remove.append(rec)
-                        for rec in to_remove:
-                            self.recombinants[receptor][locus].remove(rec)
-
-    def count_productive_recombinants(self, receptor, locus):
-        recs = self.recombinants[receptor][locus]
-        count = 0
-        if recs is not None:
-            for rec in recs:
-                if rec.productive:
-                    count += 1
-        return (count)
-
-    def count_total_recombinants(self, receptor, locus):
-        recs = self.recombinants[receptor][locus]
-        count = 0
-        if recs is not None:
-            count = len(recs)
-        return (count)
-
-    def get_fasta_lengths(self, receptor, locus):
-        recs = self.recombinants[receptor][locus]
-        lengths = []
-        if recs is not None:
-            for rec in recs:
-                lengths.append(len(rec.fasta_seq))
-        return (lengths)
-
-    def has_excess_recombinants(self, max_r=2):
-        for receptor, locus_dict in six.iteritems(self.recombinants):
-            for locus, recs in six.iteritems(locus_dict):
-                if recs is not None:
-                    if len(recs) > max_r:
-                        return (True)
 
     def choose_recombinants(self):
         ret_dict = defaultdict(dict)
@@ -401,13 +167,6 @@ class Cell(object):
 
 
 
-    def common_elements(self,list1, list2):
-        return list(set(list1) & set(list2))
-
-    def are_intersects(self, list1, list2):
-        return self.common_elements(list1,list2) != []
-
-
 class Recombinant(object):
     """Class to describe a recombined TCR locus as determined from the single-cell pipeline"""
 
@@ -439,26 +198,6 @@ class Recombinant(object):
         return (
         "{} {} {} {}".format(self.identifier, self.productive, self.TPM))
 
-    def _get_cdr3(self, dna_seq):
-        aaseq = Seq(str(dna_seq), generic_dna).translate()
-        if re.findall('FG.G', str(aaseq)) and re.findall('C', str(aaseq)):
-            indices = [i for i, x in enumerate(aaseq) if x == 'C']
-            upper = str(aaseq).find(re.findall('FG.G', str(aaseq))[0])
-            lower = False
-            for i in indices:
-                if i < upper:
-                    lower = i
-            if lower:
-                cdr3 = aaseq[lower:upper + 4]
-            else:
-                cdr3 = "Couldn't find conserved cysteine"
-        elif re.findall('FG.G', str(aaseq)):
-            cdr3 = "Couldn't find conserved cysteine"
-        elif re.findall('C', str(aaseq)):
-            cdr3 = "Couldn't find FGXG"
-        else:
-            cdr3 = "Couldn't find either conserved boundary"
-        return (cdr3)
 
     def get_summary(self):
         summary_string = "##{contig_name}##\n".format(

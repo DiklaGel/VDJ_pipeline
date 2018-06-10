@@ -2,9 +2,6 @@ from __future__ import print_function
 
 import glob
 import os
-import re
-import subprocess
-import pandas as pd
 from collections import defaultdict
 from gelSeqLib import VDJ_func
 
@@ -17,71 +14,8 @@ def makeOutputDir(output_dir_path):
         os.makedirs(output_dir_path)
 
 
-########################################################################
-#---------------------- functions added by Dikla ----------------------#
-# find all the lines starting with strings from list_of_strings
-def find_lines(list_of_strings,file):
-    lines = list()
-    for word in list_of_strings:
-        current_lines = subprocess.getoutput("""gunzip -c %s | grep -n "^%s" | cut -d : -f 1  """ % (file, word)).split("\n")
-        lines += current_lines
-    return lines
-
-# create a list of reads (each read is 4 lines string)
-def get_full_reads(lines,file):
-    reads = list()
-    lines_to_add = [l for line in lines for l in range(int(line)-1,int(line)+3)]
-    s = ["NR==" + str(l) for l in lines_to_add]
-    s = " || ".join(s)
-    '''
-    for line in lines:
-        reads_to_add=subprocess.getoutput(
-            """gunzip -c %s | awk 'NR>=%d && NR<=%d' """ % (file, int(line) - 1, int(line) + 2))
-    '''
-    reads_to_add=subprocess.getoutput( """gunzip -c %s | awk %s""" % (file, s))
-    reads.append(reads_to_add)
-    return reads
-
-# create a list of reads (each read is only one line string - only the sequence)
-def get_reads(lines,file):
-    reads = list()
-    for line in lines:
-        reads.append(subprocess.getoutput("""gunzip -c %s | awk 'NR==%d' """ % (file, int(line))))
-    return reads
-
-#copy each read to a file
-def reads_to_fastq(reads,file):
-    f = open(file, "w+")
-    for read in reads:
-        for line in read.split("\n"):
-            f.write(line + "\n")
-    f.close()
-
-# generate fasta file (convert fastq format to fasta format) for further alignment
-def fastq_to_fasta(fastq):
-    fasta_path = ".".join(fastq.split(".")[0:len(fastq.split(".")) - 1]) + ".fasta"
-    #subprocess.call(["bash","shell_caller.sh","-p","fastq_to_fasta","-i",fastq,"-o", fasta_path])
-    subprocess.call(["/apps/RH7U2/gnu/fastx/0.0.14/bin/fastq_to_fasta","-i",fastq,"-o", fasta_path])
-    return fasta_path
-
-########################################################################
-
 def is_exe(fpath):
     return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
-
-
-def clean_file_list(file_list):
-    return_list = []
-    trinity_pattern = re.compile(r"(.+)\.Trinity\.fasta")
-    for file_name in file_list:
-        clean_name = os.path.split(file_name)[1]
-        trinity_match = trinity_pattern.search(clean_name)
-        if trinity_match:
-            clean_name = trinity_match.group(1)
-        return_list.append(clean_name)
-
-    return (sorted(return_list))
-
 
 def get_filename_and_locus(name):
     name = name.split("_")
