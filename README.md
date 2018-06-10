@@ -4,10 +4,9 @@ Reconstruction of T cell receptor sequences from single-cell RNA-seq data.
 ## Contents ##
 1. [Introduction](#introduction)
 2. [Installation](#installation)
-3. [Setup](#setup)
-4. [Usage](#using-gelSeq)
-	- [*plate*](#split fastq files to cells and run gelSeq on each cell )
-    - [*cell*](#run IgBlast and output statistics about the most abundant VDJ sequence)
+3. [Usage](#using-gelSeq)
+    - [*plate*](#plate)
+    - [*cell*](#cell)
 
 
 ## Introduction
@@ -59,9 +58,10 @@ Type of sequence to be analysed.
 ## Using gelSeq 
 gelSeq has two modes: *plate* and *cell*
 
-#### *plate*: Process fastq files from single plate, split the reads by cell basrcodes run gelSeq on each cell
+### *plate*:
+Process fastq files from single plate, split the reads by cell basrcodes run gelSeq on each cell
 
-##### Usage:
+##### Usage
     gelSeq.py plate [-h] [--ncores <CORES>] [--config_file <CONFIG_FILE>]
                  [--resume_with_existing_files] [--species {Mmus,Hsap}]
                  [--receptor_name RECEPTOR_NAME] [--loci [LOCI [LOCI ...]]]
@@ -89,9 +89,10 @@ gelSeq has two modes: *plate* and *cell*
                             create new job for each cell (default: False)
     --filter FILTER       umis with more than filter reads (with respect to quantile) will be saved (default: 0.96)
  
-#### *cell*: Reconstruct TCR sequences from RNAseq reads for a single cell
+### *cell*:
+Reconstruct TCR sequences from RNAseq reads for a single cell.Running IgBlast and output statistics about the most abundant VDJ sequence
   
-##### Usage:
+##### Usage
     gelSeq.py cell [-h] [--ncores <CORES>] [--config_file <CONFIG_FILE>]
                  [--resume_with_existing_files] [--species {Mmus,Hsap}]
                  [--receptor_name RECEPTOR_NAME] [--loci LOCI [LOCI ...]]
