@@ -68,13 +68,16 @@ CSV file with VDJ statistics about the plate's wells (only those who had mapped 
 ##### Main process:
 In order to reduce the noise and running time, we need to drop out unwanted reads:
 - First: filter by read2 (by kmers):
-     1. Filter reads by their cell and UMI barcode (15-mers) frequencies: reads with 15-mer frequency less than f (0.96 ?) percentile are excluded.
+     1. Filter reads by their cell and UMI barcode (15-mers) frequencies: reads with 15-mer frequency less than f (=0.96 ?) percentile are excluded.
      2. Mapping of unmapped cell barcodes to wells by cell barcode similiarity of 2 and umi barcode similarity of 1
-     2. Filter reads by UMI barcode similarity:  eads with similar (hamming distance <= 2) UMI sequences but different cell barcodes are excluded in a way that keeps only the abundant reads
-     . For each cell, the sequences were also filtered by their hyper variable region abundance (positions 80-130 in the sequence). For each cell, fasta file was produced while each read represents a unique sequence with its frequency is written in the name of the read. 
+     3. Filter reads by UMI barcode similarity: 
+        3.1. For each UMI barcode, define its consensus UMI: the most abundant UMI with hamming distance <= 2
+        3.2. For each consensus UMI: keep only kmers from the most abundant well (kmers with less abundant cell barcodes are excluded)
 - Second: filter by read1 (by the gene sequence)
-    1. For each cell, the sequences are also filtered by their hyper variable region abundance (positions 80-130 in the sequence)
-    2. After unwanted genes are excluded, fasta file for each individual cell is created and gelSeq cell mode is called for each fasta file
+    1. For each consensus UMI (AKA molecule), create a consensus sequence of the reads (*so far I have not been able to write this phase in a cost-effective way)/peek the most abundant sequence
+    2. For each cell, create a Fasta file with one sequence (the consensus sequence) for each molecule (the consensus UMI)
+    
+After a fasta file for each individual cell is created, we run GelSeq separately for each cell. 
 
 ##### Usage
     gelSeq.py plate [-h] [--ncores <CORES>] [--config_file <CONFIG_FILE>]
@@ -105,8 +108,20 @@ In order to reduce the noise and running time, we need to drop out unwanted read
     --filter FILTER       umis with more than filter reads (with respect to quantile) will be saved (default: 0.96)
  
 ### *cell*:
-Reconstruct TCR sequences from RNAseq reads for a single cell.Running IgBlast and output statistics about the most abundant VDJ sequence
-  
+##### Description:
+Reconstruct TCR sequences from RNAseq reads for a single cell. Running IgBlast and output statistics about the most abundant VDJ sequence
+##### Input:
+Fasta file with list of reads: for each molecule (consensus UMI barcode) there is one read (TCRB consensus sequences)
+##### Output:
+CSV file with one row of the VDJ statistics of this specific cell
+##### Main process:
+The code for this process is based on Tracer code 
+1. Fasta file is used as input to IgBlast and the resulting output text file is processed with a custom parsing script (from Tracer).
+2. Reads were classed as representing TCR sequences if they contained gene segments from the correct locus and if their reported V and J alignments had E-values below 5 × 10−3. 
+3. Reads were determined to be productive, and CDR3 sequences were translated according to IgBlast output
+4. From the set of productive reads, a csv file with IgBlast statistics is genereated
+
+
 ##### Usage
     gelSeq.py cell [-h] [--ncores <CORES>] [--config_file <CONFIG_FILE>]
                  [--resume_with_existing_files] [--species {Mmus,Hsap}]

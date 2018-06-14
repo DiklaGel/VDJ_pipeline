@@ -36,6 +36,37 @@ def get_barcode_dict(map_cell_to_barcode,unmapped):
                 barcode_dict[barcode].append(artificial_barcode)
     return barcode_dict, well_to_barcode
 
+def frequency_matrix(dna_list):
+    n = max([len(dna) for dna in dna_list])
+    frequency_matrix = {base: np.zeros(n, dtype=np.int)
+                        for base in 'ACGT'}
+    for dna in dna_list:
+        dna = np.array(dna, dtype='c')
+        for base in 'ACGT':
+            frequency_matrix[base] += np.append(np.asarray(dna==base.encode(),dtype=np.int),np.asarray([False] * (n-len(dna)),dtype=np.int))
+
+    return frequency_matrix
+
+
+def find_consensus(dna_list):
+    freq_matrix = frequency_matrix(dna_list)
+    consensus = ''
+    dna_length = len(freq_matrix['A'])
+
+    for i in range(dna_length):  # loop over positions in string
+        max_freq = -1            # holds the max freq. for this i
+        max_freq_base = None     # holds the corresponding base
+
+        for base in 'ATGC':
+            if freq_matrix[base][i] > max_freq:
+                max_freq = freq_matrix[base][i]
+                max_freq_base = base
+            elif freq_matrix[base][i] == max_freq:
+                max_freq_base = '-' # more than one base as max
+        consensus += max_freq_base  # add new base with max freq
+    return consensus
+
+
 def consensus(reads,freqs):
     bestseqs = [[]]
     #c = []
@@ -51,7 +82,7 @@ def consensus(reads,freqs):
 
 def create_fasta_per_cell_new(fastq1, fastq2, filtered_in_mapped_barcodes, output_dir,total_reads,log_file):
     with open(os.path.join(output_dir,"umi_status.csv"),'w') as log_stats:
-        log_stats.write("Well_ID,cell_name,consensus_umi_barcode,read,freq,consensus_read\n")
+        log_stats.write("Well_ID,cell_name,cell_barcode,umi_barcode,consensus_umi_barcode,read,freq,consensus_read\n")
     fastq1_dest = os.path.join(output_dir, os.path.basename(fastq1).split(".gz")[0])
     gunzip_fastq(fastq1, fastq1_dest)
     fastq2_dest = os.path.join(output_dir, os.path.basename(fastq2).split(".gz")[0])
@@ -64,6 +95,7 @@ def create_fasta_per_cell_new(fastq1, fastq2, filtered_in_mapped_barcodes, outpu
             cell_fasta_file = os.path.join(os.path.join(output_dir, "cells"), cell_name + ".fasta")
             with open(cell_fasta_file, 'a+') as fa:
                 for consensus_umi_barcode,group in cell_group.groupby(by="consensus_umi_barcode"):
+                    stat_df = pd.DataFrame(columns=["cell_barcode","umi_barcode","read"])
                     reads = []
                     for index,row in group.iterrows():
                         cell_barcode = row["cell_barcode"]
@@ -73,31 +105,30 @@ def create_fasta_per_cell_new(fastq1, fastq2, filtered_in_mapped_barcodes, outpu
                         cell_barcode + umi_barcode,fastq2_dest))
                         lines = lines.split("\n")
                         lines = [int(i) - 1 for i in lines]
-                        reads.extend(lines)
+                        stat_df = stat_df.append(pd.DataFrame([{"cell_barcode":cell_barcode,"umi_barcode": umi_barcode,"read":r1[i].rstrip()} for i in lines if len(r1[i]) > 130 and "N" not in r1[i]]))
                     # generate a data frame of reads and their hyper variable region
-                    df2 = pd.DataFrame([r1[i].rstrip() for i in reads if len(r1[i]) > 130 and "N" not in r1[i]])
-                    if len(df2) == 0:
+                    if len(stat_df) == 0:
                         continue
-                    df2.columns = ["read"]
-                    df2_reads = df2.groupby("read").size()
-                    consensus_read = df2_reads.argmax()
+                    consensus_read = find_consensus(stat_df["read"].tolist())
+                    stat_df_size = stat_df.groupby(["cell_barcode","umi_barcode","read"]).size()
+                    #consensus_read = df2_reads.argmax()
                     #consensus_read = consensus([list(c) for c in df2_reads.index],df2_reads.values)
-                    for i, j in df2_reads.iteritems():
-                        stats = well_id + "," + cell_name + "," + consensus_umi_barcode + "," + str(i[0:len(i)-1]) + "," + str(j) + "," + consensus_read
+                    for i, j in stat_df_size.iteritems():
+                        stats = ",".join([well_id ,cell_name,i[0],i[1],consensus_umi_barcode,i[2][0:len(i[2])-1],str(j), consensus_read])
                         with open(os.path.join(output_dir, "umi_status.csv"), 'a+') as log_stats:
                             log_stats.write(stats + "\n")
-                    query_line = ">" + consensus_umi_barcode + "-" + str(df2_reads.sum()) + "\n"
+                    query_line = ">" + consensus_umi_barcode + "-" + str(stat_df_size.sum()) + "\n"
                     fa.write(query_line)
                     fa.write(consensus_read + "\n")
                     if well_id not in final_output.index:
-                        final_output.loc[well_id,["Well_ID","cell_name",'plate_total_reads']] =  [well_id,cell_name,total_reads]
-                        final_output.loc[well_id, "reads_freq"] = int(len(df2))
+                        final_output.loc[well_id,["Well_ID","cell_name",'plate_total_reads']] = [well_id,cell_name,total_reads]
+                        final_output.loc[well_id, "reads_freq"] = int(len(stat_df))
                         final_output.loc[well_id, "umi_count"] = 1
-                        final_output.loc[well_id,"umi_distribution"] = str(int(len(df2)))
+                        final_output.loc[well_id,"umi_distribution"] = str(int(len(stat_df)))
                     else:
-                        final_output.loc[well_id, "reads_freq"] += int(len(df2))
+                        final_output.loc[well_id, "reads_freq"] += int(len(stat_df))
                         final_output.loc[well_id, "umi_count"] += 1
-                        final_output.loc[well_id, "umi_distribution"] += "," + str(int(len(df2)))
+                        final_output.loc[well_id, "umi_distribution"] += " " + str(int(len(stat_df)))
                     final_output = final_output.sort_values(by="reads_freq", ascending=False)
                     final_output.to_csv(os.path.join(output_dir, "final_output.csv"), index=False)
     with open(log_file, 'a+') as log:
@@ -277,44 +308,7 @@ def split_to_cells(plate_name,wells_cells_file,output_dir,fastq1,fastq2,f):
 
     filtered_in_mapped_barcodes[["Well_ID","well_coordinates","num","cell_barcode","umi_barcode","consensus_umi_barcode"]].to_csv(os.path.join(output_dir,"high_conf_before_filtering_after_consensus.csv"),index=False)
 
-
-    # for each umi in each well - decide what is the original sequence
-    """
-    filtered_in_mapped_barcodes = filtered_in_mapped_barcodes.sort_index()
-    for name, group in filtered_in_mapped_barcodes.groupby(by="Well_ID"):
-        if group["umi_barcode"].nunique()>1:
-            dom_umi = [group.iloc[0]["umi_barcode"]]
-            for index,row in group.iterrows():
-                for dom in dom_umi:
-                    if hamming_distance(row["umi_barcode"],dom,3) <=2:
-                        filtered_in_mapped_barcodes.loc[index,"consensus_umi_barcode"] = dom
-                        break
-                if filtered_in_mapped_barcodes.loc[index,"consensus_umi_barcode"] is None:
-                    dom_umi.append(row["umi_barcode"])
-                    filtered_in_mapped_barcodes.loc[index,"consensus_umi_barcode"] = row["umi_barcode"]
-        else:
-            for index, row in group.iterrows():
-                filtered_in_mapped_barcodes.loc[index,"consensus_umi_barcode"] = row["umi_barcode"]
-    filtered_in_mapped_barcodes = filtered_in_mapped_barcodes.sort_index()
-    
-    # dropping out reads with similar cell barcode (mapped to different wells) and similar umi barcode with lower frequency
- 
-    sorted_wells = filtered_in_mapped_barcodes.groupby("Well_ID")["num"].max().sort_values(ascending=False).index
-    for well in sorted_wells:
-        well_table = filtered_in_mapped_barcodes[filtered_in_mapped_barcodes["cell_barcode"] == well_to_barcode[well]]
-        for index, row in well_table.iterrows():
-            sub_table = filtered_in_mapped_barcodes[(
-                filtered_in_mapped_barcodes["cell_barcode"].isin(barcode_dict[well_to_barcode[well]])) & (filtered_in_mapped_barcodes["Well_ID"] != well)]
-            for index2, row2 in sub_table.iterrows():
-                if hamming_distance(row["umi_barcode"],row2["umi_barcode"],2) <=1:
-                    if row["num"] >= row2["num"]:
-                        filtered_in_mapped_barcodes = filtered_in_mapped_barcodes.drop(index2)
-                    else:
-                        filtered_in_mapped_barcodes = filtered_in_mapped_barcodes.drop(index)
-                        break
-    """
-
-    # dropping out kmers with identitcal consensus umi sequence, only the most abundant well survives
+   # dropping out kmers with identitcal consensus umi sequence, only the most abundant well survives
 
     field = "consensus_umi_barcode"
     for name,group in filtered_in_mapped_barcodes.groupby(by=field):
