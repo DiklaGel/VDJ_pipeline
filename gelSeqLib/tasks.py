@@ -151,44 +151,46 @@ class Plate_Task(Task):
         io_func.makeOutputDir(root_output_dir)
         self.output_dir = os.path.join(root_output_dir , self.plate_name)
         io_func.makeOutputDir(self.output_dir)
+        cells_dir = os.path.join(self.output_dir,"cells")
+        io_func.makeOutputDir(cells_dir)
 
 
         self.split_to_cells()
-        mapper = [_CELLrun(fasta.replace('.fasta', ''), self.output_dir + "/" + fasta, self.output_dir)
-                  for fasta in os.listdir(self.output_dir) if ".fasta" in fasta]
+        mapper = [_CELLrun(fasta.replace('.fasta', ''), cells_dir + "/" + fasta, cells_dir)
+                  for fasta in os.listdir(cells_dir) if ".fasta" in fasta]
         for job in mapper:
             job.submit_command(cpu_cores=5, memory=350, queue="new-short")
         wait_for_jobs(mapper)
 
         df1 = pd.read_csv(self.output_dir + "/final_output.csv")
-        list_csv = [self.output_dir + "/" + file for file in os.listdir(self.output_dir) if ".csv" in file and "output" not in file and "high" not in file]
+        list_csv = [cells_dir + "/" + file for file in os.listdir(cells_dir) if ".csv" in file and "output" not in file and "high" not in file]
         df2 = pd.DataFrame(columns=["cell_name","V_first","V_first_counts","V_first_avg_e_value",
                                                                           "V_second","V_second_counts","V_second_avg_e_value",
                                                                           "D_first","D_first_counts","D_first_avg_e_value",
                                                                           "D_second","D_second_counts","D_second_avg_e_value",
                                                                           "J_first", "J_first_counts","J_first_avg_e_value",
                                                                           "J_second", "J_second_counts","J_second_avg_e_value",
-                                                                          "CDR3_first", "CDR3_first_counts","CDR3_first_identity","CDR3_first_unique_reads",
-                                                                          "CDR3_translation_first","CDR3_translation_first_counts","CDR3_translation_first_identity","CDR3_translation_first_unique_reads",
-                                                                          "CDR3_second", "CDR3_second_counts","CDR3_second_identity","CDR3_second_unique_reads",
+                                                                          "CDR3_first", "CDR3_first_counts","CDR3_first_identity","CDR3_first_umi_count",
+                                                                          "CDR3_translation_first","CDR3_translation_first_counts","CDR3_translation_first_identity","CDR3_translation_first_umi_count",
+                                                                          "CDR3_second", "CDR3_second_counts","CDR3_second_identity","CDR3_second_umi_count",
                                                                           "CDR3_translation_second","CDR3_translation_second_counts","CDR3_translation_second_identity",
-                                                                          "CDR3_translation_second_unique_reads"])
+                                                                          "CDR3_translation_second_umi_count"])
         for file in list_csv:
             df2 = df2.append(pd.read_csv(file), ignore_index=True)
         #for file in list_csv:
             #os.remove(file)
         df1 = pd.merge(df1,df2,on="cell_name",how="left",left_index=False,right_index=False)
-        df1 = df1[['Well_ID','cell_name','reads_freq','plate_total_reads','umi_distribution',"unique_var_region","V_first","V_first_counts","V_first_avg_e_value",
+        df1 = df1[['Well_ID','cell_name','plate_total_reads','reads_freq','umi_count','umi_distribution',"V_first","V_first_counts","V_first_avg_e_value",
                                                                           "V_second","V_second_counts","V_second_avg_e_value",
                                                                           "D_first","D_first_counts","D_first_avg_e_value",
                                                                           "D_second","D_second_counts","D_second_avg_e_value",
                                                                           "J_first", "J_first_counts","J_first_avg_e_value",
                                                                           "J_second", "J_second_counts","J_second_avg_e_value",
-                                                                          "CDR3_first", "CDR3_first_counts","CDR3_first_identity","CDR3_first_unique_reads",
-                                                                          "CDR3_translation_first","CDR3_translation_first_counts","CDR3_translation_first_identity","CDR3_translation_first_unique_reads",
-                                                                          "CDR3_second", "CDR3_second_counts","CDR3_second_identity","CDR3_second_unique_reads",
+                                                                          "CDR3_first", "CDR3_first_counts","CDR3_first_identity","CDR3_first_umi_count",
+                                                                          "CDR3_translation_first","CDR3_translation_first_counts","CDR3_translation_first_identity","CDR3_translation_first_umi_count",
+                                                                          "CDR3_second", "CDR3_second_counts","CDR3_second_identity","CDR3_second_umi_count",
                                                                           "CDR3_translation_second","CDR3_translation_second_counts","CDR3_translation_second_identity",
-                                                                          "CDR3_translation_second_unique_reads"]]
+                                                                          "CDR3_translation_second_umi_count"]]
         df1.to_csv(self.output_dir + "/final_table.csv")
 
 

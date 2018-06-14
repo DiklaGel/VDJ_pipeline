@@ -59,10 +59,10 @@ class Cell(object):
                     D_ranks = Counter()
                     J_ranks = Counter()
                     cdr3_ranks = Counter()
-                    cdr3_unique_reads = Counter()
+                    cdr3_umi_count = Counter()
                     cdr3_percent_identity = Counter()
                     cdr3_translation_ranks = Counter()
-                    cdr3_translation_unique_reads = Counter()
+                    cdr3_translation_umi_count = Counter()
                     cdr3_translation_percent_identity = Counter()
                     V_eValue = Counter()
                     D_eValue = Counter()
@@ -83,9 +83,9 @@ class Cell(object):
                                 J_eValue.update({str(seq): float(hit[12])*int(freq)})
                         if rec.cdr3 is not None and len(rec.cdr3) != 0:
                             cdr3_ranks.update({rec.cdr3[1]: int(freq)})
-                            cdr3_unique_reads.update({rec.cdr3[1]: 1})
+                            cdr3_umi_count.update({rec.cdr3[1]: 1})
                             cdr3_translation_ranks.update({rec.cdr3[2]: int(freq)})
-                            cdr3_translation_unique_reads.update({rec.cdr3[2]: 1})
+                            cdr3_translation_umi_count.update({rec.cdr3[2]: 1})
                             for align in rec.alignment_summary:
                                 if 'CDR3' in align:
                                     a = align.split('\t')
@@ -128,28 +128,28 @@ class Cell(object):
                                                                "CDR3_first": "NA" if len(cdr3_ranks) == 0 else cdr3_ranks.most_common(2)[0][0],
                                                                "CDR3_first_counts": 0 if len(cdr3_ranks) == 0 else cdr3_ranks.most_common(2)[0][1],
                                                                "CDR3_first_identity": 0 if len(cdr3_ranks) == 0 else cdr3_avg_identity[cdr3_ranks.most_common(2)[0][0]],
-                                                               "CDR3_first_unique_reads": 0 if len(cdr3_ranks) == 0 else cdr3_unique_reads[cdr3_ranks.most_common(2)[0][0]],
+                                                               "CDR3_first_umi_count": 0 if len(cdr3_ranks) == 0 else cdr3_umi_count[cdr3_ranks.most_common(2)[0][0]],
                                                                "CDR3_translation_first": "NA" if len(cdr3_translation_ranks) == 0 else
                                                                cdr3_translation_ranks.most_common(2)[0][0],
                                                                "CDR3_translation_first_counts": 0 if len(cdr3_translation_ranks) == 0 else
                                                                cdr3_translation_ranks.most_common(2)[0][1],
                                                                "CDR3_translation_first_identity": 0 if len(cdr3_translation_ranks) == 0 else
                                                                cdr3_translation_avg_identity[cdr3_translation_ranks.most_common(2)[0][0]],
-                                                               "CDR3_translation_first_unique_reads": 0 if len(
-                                                                   cdr3_translation_ranks) == 0 else cdr3_translation_unique_reads[
+                                                               "CDR3_translation_first_umi_count": 0 if len(
+                                                                   cdr3_translation_ranks) == 0 else cdr3_translation_umi_count[
                                                                    cdr3_translation_ranks.most_common(2)[0][0]],
                                                                "CDR3_second":"NA" if len(cdr3_ranks) < 2 else cdr3_ranks.most_common(2)[1][0],
                                                                "CDR3_second_counts": 0 if len(cdr3_ranks) < 2  else cdr3_ranks.most_common(2)[1][1],
                                                                "CDR3_second_identity": 0 if len(cdr3_ranks) < 2 else cdr3_avg_identity[cdr3_ranks.most_common(2)[1][0]],
-                                                               "CDR3_second_unique_reads": 0 if len(cdr3_ranks) < 2 else cdr3_unique_reads[cdr3_ranks.most_common(2)[1][0]],
+                                                               "CDR3_second_umi_count": 0 if len(cdr3_ranks) < 2 else cdr3_umi_count[cdr3_ranks.most_common(2)[1][0]],
                                                                "CDR3_translation_second": "NA" if len(cdr3_translation_ranks) < 2 else
                                                                cdr3_translation_ranks.most_common(2)[1][0],
                                                                "CDR3_translation_second_counts": 0 if len(cdr3_translation_ranks) < 2  else
                                                                cdr3_translation_ranks.most_common(2)[1][1],
                                                                "CDR3_translation_second_identity": 0 if len(cdr3_translation_ranks) < 2 else
                                                                cdr3_translation_avg_identity[cdr3_translation_ranks.most_common(2)[1][0]],
-                                                               "CDR3_translation_second_unique_reads": 0 if len(
-                                                                   cdr3_translation_ranks) < 2 else cdr3_translation_unique_reads[
+                                                               "CDR3_translation_second_umi_count": 0 if len(
+                                                                   cdr3_translation_ranks) < 2 else cdr3_translation_umi_count[
                                                                    cdr3_translation_ranks.most_common(2)[1][0]]}],
                                                              columns=["cell_name","V_first","V_first_counts","V_first_avg_e_value",
                                                                       "V_second","V_second_counts","V_second_avg_e_value",
@@ -157,11 +157,11 @@ class Cell(object):
                                                                       "D_second","D_second_counts","D_second_avg_e_value",
                                                                       "J_first", "J_first_counts","J_first_avg_e_value",
                                                                       "J_second", "J_second_counts","J_second_avg_e_value",
-                                                                      "CDR3_first", "CDR3_first_counts","CDR3_first_identity","CDR3_first_unique_reads",
-                                                                      "CDR3_translation_first","CDR3_translation_first_counts","CDR3_translation_first_identity","CDR3_translation_first_unique_reads",
-                                                                      "CDR3_second", "CDR3_second_counts","CDR3_second_identity","CDR3_second_unique_reads",
+                                                                      "CDR3_first", "CDR3_first_counts","CDR3_first_identity","CDR3_first_umi_count",
+                                                                      "CDR3_translation_first","CDR3_translation_first_counts","CDR3_translation_first_identity","CDR3_translation_first_umi_count",
+                                                                      "CDR3_second", "CDR3_second_counts","CDR3_second_identity","CDR3_second_umi_count",
                                                                       "CDR3_translation_second","CDR3_translation_second_counts","CDR3_translation_second_identity",
-                                                                      "CDR3_translation_second_unique_reads"])
+                                                                      "CDR3_translation_second_umi_count"])
         print(ret_dict)
         return ret_dict
 
